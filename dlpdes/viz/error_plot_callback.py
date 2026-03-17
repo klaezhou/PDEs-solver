@@ -30,6 +30,6 @@ class ErrorPlotCallback(Callback):
         self.eq.plot_u(trainer.model, self.save_dir)
         
     def on_phase_begin(self, trainer, phase: str):
-        if phase not in ("adam", "lbfgs","proj_adam"):
+        if phase not in ("adam", "lbfgs","proj_adam", "lm"):
             print(f"[Warning] Unknown phase '{phase}', using base freq.")
         self.freq = self.freq_dict.get(phase, self._base_freq)

@@ -138,7 +138,6 @@ class MoE(nn.Module):
     """
     def __init__(self,input_size,num_experts,hidden_size,depth,output_size,gating_hidden_size,gating_depth,activation=nn.Tanh()):
         super(MoE, self).__init__()
-        torch.set_default_dtype(torch.float64)
         self.depth = depth
         self.num_experts = num_experts
         self.input_size = input_size

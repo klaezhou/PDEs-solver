@@ -7,6 +7,7 @@ from viz.error_plot_callback import ErrorPlotCallback
 from viz.loss_plot_callback import LossPlotCallback
 from viz.checkpoint_callback import CheckpointCallback
 from viz.rank_callback import RankCallback
+from viz.time_plot_callback import TimePlotCallback
 from model.factory import get_feature_getter
 def parse_args():
     parser = argparse.ArgumentParser(description="PINNs Lightweight Solver")
@@ -86,7 +87,8 @@ def main():
     check_cb = CheckpointCallback(args=args, freq_dict=args.checkpoint_freq)
     feature_getter= get_feature_getter(args)
     rank_cb=    RankCallback(args=args, equation=eq, feature_getter=feature_getter, freq_dict=args.rank_freq)
-    callbacks = [err_cb, loss_cb, check_cb,rank_cb]
+    time_cb=    TimePlotCallback(args=args, freq_dict=args.loss_freq)
+    callbacks = [err_cb, loss_cb, check_cb,rank_cb, time_cb]
     pipe = Pipeline(args=args, equation=eq, callbacks=callbacks)
     
     print(f"--- Starting {args.eq.upper()} train ---")

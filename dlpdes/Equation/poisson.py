@@ -1,10 +1,13 @@
 # Equation/poisson.py
+import numpy as np
+import torch
 import os
+from torch.func import functional_call, jacrev, hessian, vmap
 import torch
 from Equation._base import BaseEquation
 import math
 import matplotlib.pyplot as plt
-
+from torch.func import jacrev, vmap
 class PoissonEquation(BaseEquation):
     """
     Poisson equation -Δu = f, on domain Ω , with Dirichler boundary condtion u=g at ∂Ω. 
@@ -20,7 +23,7 @@ class PoissonEquation(BaseEquation):
 
         x1 = x[:, 0:1]
         x2 = x[:, 1:2]
-        return (5*math.pi**2) * torch.sin(2*math.pi * x1) * torch.sin(1*math.pi * x2)
+        return (34*math.pi**2) * torch.sin(5*math.pi * x1) * torch.sin(3*math.pi * x2)
 
     def g(self, x):
         """
@@ -30,57 +33,98 @@ class PoissonEquation(BaseEquation):
         """
         # example: u=0 at boundary
         return torch.zeros((x.shape[0], 1), device=x.device, dtype=x.dtype)
-    def laplacian(self, u, x):
+    
+    def laplacian_jacrev(self, model_fn, x):
         """
-        u: [N,1] = model(x)
-        x: [N,dim] requires_grad=True
-        return: [N,1]  Laplacian(u)
+        model_fn: callable, x -> [N,1]
+        x: [N, dim]
+        return: [N,1]
         """
-        grad_u = torch.autograd.grad(
-            outputs=u, inputs=x,
+        def scalar_u(x_single):
+            # x_single: [dim]
+            y = model_fn(x_single.unsqueeze(0))   # [1,dim] -> [1,1]
+            return y.squeeze()                    # scalar
+
+        def lap_single(x_single):
+            H = hessian(scalar_u)(x_single)       # [dim, dim]
+            # H=torch.autograd.functional.hessian(scalar_u, x_single, create_graph=True)
+            return torch.trace(H)
+
+        lap = vmap(lap_single)(x)                 # [N]
+        return lap.unsqueeze(1)                   # [N,1]
+        
+    def laplacian_autograd(self, model, x):
+        """
+        适用于普通 loss.backward()
+        x: [N, dim]
+        return: [N, 1]
+        """
+        x = x.requires_grad_(True)
+        u = model(x)   # [N,1]
+
+        grads = torch.autograd.grad(
+            outputs=u,
+            inputs=x,
             grad_outputs=torch.ones_like(u),
-            create_graph=True, retain_graph=True
-        )[0]  # [N, dim]
+            create_graph=True,
+            retain_graph=True,
+        )[0]   # [N, dim]
 
         lap = 0.0
-        for d in range(x.shape[1]):
-            grad_ud = grad_u[:, d:d+1]  # [N,1]
-            grad2_ud = torch.autograd.grad(
-                outputs=grad_ud, inputs=x,
-                grad_outputs=torch.ones_like(grad_ud),
-                create_graph=True, retain_graph=True
-            )[0][:, d:d+1]  # [N,1]
-            lap = lap + grad2_ud
+        for i in range(x.shape[1]):
+            grad_i = grads[:, i:i+1]   # [N,1]
+            grad2_i = torch.autograd.grad(
+                outputs=grad_i,
+                inputs=x,
+                grad_outputs=torch.ones_like(grad_i),
+                create_graph=True,
+                retain_graph=True,
+            )[0][:, i:i+1]   # [N,1]
+            lap = lap + grad2_i
+
         return lap
 
-    def compute_loss(self, model, batch: dict):
+    def compute_loss(self, model, batch: dict,mode="jacrev"):
         
         # 1) PDE residual
-        x_f = batch["X_f"].requires_grad_(True)  
-        u_f = model(x_f)
-        lap_u = self.laplacian(u_f, x_f)
+        x_f = batch["X_f"]
+        if mode == "backward":
+            # print("backward")
+            lap_u = self.laplacian_autograd(model, x_f)
+            # print(lap_u)
+        elif mode == "jacrev":
+            # print("jacrev")
+            lap_u = self.laplacian_jacrev(model, x_f)
         f_f = batch.get("f_f", self.f(x_f))
 
-        r_f = (-lap_u - f_f)
-        loss_pde = torch.mean(r_f**2)
+        r_f = (lap_u + f_f)
+        loss_pde = 0.5*torch.mean(r_f**2)
 
         # 2) Boundary loss
         x_b = batch["X_b"]
         u_b = model(x_b)
         g_b = batch.get("g_b", self.g(x_b))
-        loss_bc = torch.mean((u_b - g_b)**2)
+        r_b= u_b-g_b
+        loss_bc = 0.5*torch.mean((r_b)**2)
 
         # 3) Total and Weighting
         w_pde = getattr(self.args, "w_pde", 1.0)
         w_bc  = getattr(self.args, "w_bc", 1.0)
         
         total_loss = w_pde * loss_pde + w_bc * loss_bc
-
-        # --- 关键修改：返回字典 ---
+        r=torch.cat([r_f.flatten(), r_b.flatten()])
+        r=r/ math.sqrt(r.numel())
+    # --- 关键修改：返回字典 ---
         loss_dict = {
-        "total": total_loss,
-        "pde": loss_pde.detach(),
-        "bc": loss_bc.detach(),
+        "loss":{ 
+            "total": total_loss,
+            "pde": loss_pde.detach(),
+            "bc": loss_bc.detach(),
+        },
+        "residuals": {
+            "all": r
+        }
+
         }
         return loss_dict
     
@@ -105,6 +149,8 @@ class PoissonEquation(BaseEquation):
             raise ValueError(f"Unknown sample_method: {sample_method}")
 
         # 3) (recommended) precompute f and g values
+        X_f = X_f.requires_grad_(True)
+        X_b = X_b.requires_grad_(True)
         f_f = self.f(X_f)
         g_b = self.g(X_b)
 
@@ -113,7 +159,7 @@ class PoissonEquation(BaseEquation):
     
     def exact_solution(self, x):
             """return exact solution at x for error analysis"""
-            return torch.sin(2*torch.pi * x[:, 0:1]) * torch.sin(1*torch.pi * x[:, 1:2])
+            return torch.sin(5*torch.pi * x[:, 0:1]) * torch.sin(3*torch.pi * x[:, 1:2])
         
     @torch.no_grad()
     def plot_error(self, model, it: int, save_dir: str):
@@ -152,7 +198,6 @@ class PoissonEquation(BaseEquation):
         # --- evaluate ---
         model_was_training = model.training
         model.eval()
-
         pred = model(grid_xy)
         if pred.dim() == 1:
             pred = pred.unsqueeze(1)

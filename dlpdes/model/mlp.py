@@ -17,9 +17,9 @@ class MLP(nn.Module):
     """
     def __init__(self, args):
         super().__init__()
-        self.depth = getattr(args, "mlp_depth", 6)
+        self.depth = getattr(args, "mlp_depth", 5)
         input_size = getattr(args, "input_size", 2)
-        hidden_size = getattr(args, "mlp_hidden_size", 40)
+        hidden_size = getattr(args, "mlp_hidden_size", 30)
         output_size = getattr(args, "output_size", 1)
 
         self.activation = nn.Tanh()
@@ -50,14 +50,14 @@ class MLP(nn.Module):
         for m in self.feature:
             if isinstance(m, nn.Linear):
                 # Xavier uniform initialization for weights
-                init.xavier_uniform_(m.weight)
+                init.xavier_normal_(m.weight.data)
                 # Zero initialization for biases
-                init.zeros_(m.bias)
+                if m.bias is not None:
+                    m.bias.data.zero_()
         
         # Initialize the output head (Linear layer)
         if isinstance(self.head, nn.Linear):
-            init.xavier_uniform_(self.head.weight)
-            
+            init.xavier_normal_(self.head.weight.data)
         
     # @torch.no_grad()
     def forward_penultimate(self, x):

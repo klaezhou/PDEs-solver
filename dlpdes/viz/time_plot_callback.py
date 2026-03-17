@@ -12,18 +12,16 @@ class TimePlotCallback(Callback):
         self.save_dir = args.save_dir
         self.freq_dict = freq_dict
         self.freq = None
-
         os.makedirs(self.save_dir, exist_ok=True)
-
         self.times = []        # ← 横坐标
         self.history = {}      # loss history
         self.start_time = None
 
     def on_phase_begin(self, trainer, phase: str):
-        if phase not in ("adam", "lbfgs", "proj_adam"):
+        if phase not in ("adam", "lbfgs", "proj_adam", "lm"):
             print(f"[Warning] Unknown phase '{phase}', using base freq.")
 
-        self.freq = self.freq_dict.get(phase, 10)
+        self.freq = self.freq_dict.get(phase, self._base_freq)
 
         # 开始计时
         if self.start_time is None or trainer.iter_base==0:
@@ -35,7 +33,7 @@ class TimePlotCallback(Callback):
         elapsed = time.time() - self.start_time
         self.times.append(elapsed)
 
-        for k, v in loss_dict.items():
+        for k, v in loss_dict['loss'].items():
             if k not in self.history:
                 self.history[k] = []
             self.history[k].append(float(v))

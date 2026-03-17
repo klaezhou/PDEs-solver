@@ -39,7 +39,9 @@ class Pipeline:
         torch.manual_seed(self.seed)
         if torch.cuda.is_available():
             torch.cuda.manual_seed_all(self.seed)
-        
+        if getattr(self.args, "use_double", True):
+            print("[Pipeline] Using double precision for training.")
+            torch.set_default_dtype(torch.float64)
         
     @property
     def model(self):
@@ -48,8 +50,7 @@ class Pipeline:
             print("[Pipeline] build model...")
             #model(args)
             self._model =get_model(self.args).to(self.args.device)
-        if getattr(self.args, "use_double", False):
-            self._model = self._model.double()
+        
 
         return self._model
     def reset_model(self):

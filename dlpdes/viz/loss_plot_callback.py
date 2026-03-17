@@ -19,7 +19,7 @@ class LossPlotCallback(Callback):
         # loss_dict should already be pure floats in your trainer; if not, it still works for float-like.
         self.iters.append(it)
 
-        for k, v in loss_dict.items():
+        for k, v in loss_dict["loss"].items():
             if k not in self.history:
                 self.history[k] = []
             self.history[k].append(float(v))
@@ -48,6 +48,6 @@ class LossPlotCallback(Callback):
         plt.close()
         
     def on_phase_begin(self, trainer, phase: str):
-        if phase not in ("adam", "lbfgs","proj_adam"):
+        if phase not in ("adam", "lbfgs","proj_adam", "lm"):
             print(f"[Warning] Unknown phase '{phase}', using base freq.")
         self.freq = self.freq_dict.get(phase, self._base_freq)

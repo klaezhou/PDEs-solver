@@ -5,6 +5,8 @@ from viz.callbacks import Callback
 from torch.nn.utils import parameters_to_vector, vector_to_parameters
 from train.proj import proj_step , Projection
 from viz.rank_callback import RankCallback
+from .LM import levenberg_marquardt
+from .utils import *
 class Trainer:
     """
     Trainer Module:
@@ -16,19 +18,18 @@ class Trainer:
         self.model = model
         self.eq = equation
         self.args = args
-
-        self.optimizer = optim.Adam(self.model.parameters(), lr=self.args.lr)
+        self.adam_lr=getattr(self.args, "adam_lr", 1e-3)
+        self.optimizer = optim.Adam(self.model.parameters(), lr=self.adam_lr)
 
         # scheduler is optional
         self.use_scheduler = getattr(self.args, "use_scheduler", True)
         self.scheduler = optim.lr_scheduler.StepLR(
             self.optimizer,
-            step_size=getattr(self.args, "lr_step_size", 5000),
-            gamma=getattr(self.args, "lr_gamma", 0.7)
+            step_size=getattr(self.args, "sc_step_size", 5000),
+            gamma=getattr(self.args, "sc_gamma", 0.7)
         )
         
-        self.epochs = getattr(self.args, "iters", 10000)
-        self.use_lbfgs = getattr(self.args, "use_lbfgs", False)
+        self.epochs = getattr(self.args, "adam_iters", 10000)
         self.lbfgs_iter = getattr(self.args, "lbfgs_iter", 500)
         self.lbfgs_max_iter = getattr(self.args, "lbfgs_max_iter", 50)
         self.lbfgs_lr = getattr(self.args, "lbfgs_lr", 1.0)
@@ -63,17 +64,16 @@ class Trainer:
         data: dict returned by eq.get_data(...)
         train the model for one step and return loss dict 
         """
+        refresh_batch(data)  # 刷新 batch 中的张量，使其成为叶子节点，允许反向传播
         self.optimizer.zero_grad(set_to_none=True)
 
-        loss_out = self.eq.compute_loss(self.model, data)
+        loss_out = self.eq.compute_loss(self.model, data,mode="backward")  # expect dict with "total", but keep it robust
 
         # expect dict with "total", but keep it robust
         if isinstance(loss_out, dict):
-            total_loss = loss_out["total"]
-            loss_dict = loss_out
+            total_loss = loss_out['loss']["total"]
         else:
             total_loss = loss_out
-            loss_dict = {"total": total_loss}
 
         total_loss.backward()
         self.optimizer.step()
@@ -82,12 +82,7 @@ class Trainer:
             self.scheduler.step()
 
         # convert for logging (Tensor -> float)
-        log_losses = {}
-        for k, v in loss_dict.items():
-            if isinstance(v, torch.Tensor):
-                log_losses[k] = float(v.detach().cpu())
-            else:
-                log_losses[k] = float(v)
+        log_losses =loss_out
 
         return log_losses
     
@@ -113,13 +108,11 @@ class Trainer:
             it += 1
             self.optimizer_head.zero_grad(set_to_none=True)
             
-            loss_out = self.eq.compute_loss(self.model, data)
+            loss_out = self.eq.compute_loss(self.model, data,mode="backward")
             if isinstance(loss_out, dict):
-                total_loss = loss_out["total"]
-                loss_dict = loss_out
+                total_loss = loss_out["loss"]["total"]
             else:
                 total_loss = loss_out
-                loss_dict = {"total": total_loss}
 
             total_loss.backward()
             self.optimizer_head.step()
@@ -157,12 +150,7 @@ class Trainer:
             
             self.model.zero_grad(set_to_none=True)
             
-            log_losses = {}
-            for k, v in loss_dict.items():
-                if isinstance(v, torch.Tensor):
-                    log_losses[k] = float(v.detach().cpu())
-                else:
-                    log_losses[k] = float(v)
+            log_losses = loss_out
                     
             if it % self.log_freq == 0:
                 self._print_log(it, log_losses)
@@ -228,7 +216,7 @@ class Trainer:
 
             loss_out = self.eq.compute_loss(self.model, data)
             if isinstance(loss_out, dict):
-                total_loss = loss_out["total"]
+                total_loss = loss_out["loss"]["total"]
             else:
                 total_loss = loss_out
 
@@ -243,47 +231,42 @@ class Trainer:
             # log once after LBFGS
         
             loss_out = self.eq.compute_loss(self.model, data)
-            if isinstance(loss_out, dict):
-                log_losses = {k: float(v.detach().cpu()) if isinstance(v, torch.Tensor) else float(v)
-                            for k, v in loss_out.items()}
-            else:
-                log_losses = {"total": float(loss_out.detach().cpu())}
+
 
             # trigger callbacks once (as "iter end")
             it = it_base +step
             if it % self.log_freq == 0:
-                self._print_log(it, log_losses)
+                self._print_log(it, loss_out)
             for cb in self.callbacks:
-                cb.on_iter_end(self, it, log_losses)           
+                cb.on_iter_end(self, it, loss_out)           
 
         for cb in self.callbacks:
             cb.on_train_end(self)
 
 
-        return log_losses
-    
+        return loss_out
+
+    def train_lm(self, data):
+        self.model.train()
+        return levenberg_marquardt(self, data)
     
 
     def _print_log(self, it, losses):
         """print training log"""
-        total = losses.get("total", None)
+        total = losses['loss'].get("total", None)
         if total is None:
             raise KeyError("loss dict must contain key 'total'")
 
         log_str = f"[Iter {it:06d}] Total: {total:.6e}"
 
-        for k in sorted(losses.keys()):
+        for k in sorted(losses['loss'].keys()):
             if k == "total":
                 continue
-            log_str += f" | {k.upper()}: {losses[k]:.6e}"
+            log_str += f" | {k.upper()}: {losses['loss'][k]:.6e}"
 
         lr = self.optimizer.param_groups[0]["lr"]
         log_str += f" | LR: {lr:.3e}"
 
         print(log_str)
-    def _set_phase(self, phase: str):
-        self.phase = phase
-        for cb in self.callbacks:
-            cb.on_phase_begin(self, phase)
-            
-        self.log_freq=self.args.log_freq.get(phase, 100)
+        
+        

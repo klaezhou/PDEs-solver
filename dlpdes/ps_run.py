@@ -14,17 +14,17 @@ def parse_args():
     
     # --- basic config ---
     parser.add_argument("--eq", type=str, default="poisson", help="Equation name (poisson, ac, etc.)")
-    parser.add_argument("--device", type=str, default="cuda:4")
+    parser.add_argument("--device", type=str, default="cuda:3")
     parser.add_argument("--model", type=str, default="mlp", help="Model architecture (moe_d, mlp , moe_d_w etc.)")
-    parser.add_argument("--seed", type=int, default=2021)
+    parser.add_argument("--seed", type=int, default=2026)
     
     # --- sampling ---
     parser.add_argument("--sample_method", type=str, default="grid") # random or grid
     parser.add_argument("--Nf", type=int, default=10000)
     parser.add_argument("--Nb", type=int, default=200)
-    parser.add_argument("--nx", type=int, default=20)
-    parser.add_argument("--ny", type=int, default=20)
-    parser.add_argument("--n_per_edge", type=int, default=20)
+    parser.add_argument("--nx", type=int, default=10)
+    parser.add_argument("--ny", type=int, default=10)
+    parser.add_argument("--n_per_edge", type=int, default=10)
     parser.add_argument("--w_pde", type=float, default=1.0)
     parser.add_argument("--w_bc", type=float, default=1.0)
 
@@ -37,30 +37,30 @@ def parse_args():
     parser.add_argument("--depth", type=int, default=2)
     parser.add_argument("--gating_hidden_size", type=int, default=5)
     parser.add_argument("--gating_depth", type=int, default=1)
-    parser.add_argument("--use_double", action="store_true")
+    parser.add_argument("--use_double", action="store_true", default=True)
     
     # --- training ---
     parser.add_argument("--iters", type=int, default=5000)  # adam iters
-    parser.add_argument("--use_lbfgs", action="store_true") # use lbfgs or not
+    parser.add_argument("--lm_beta_train", type=bool, default=False) # lbfgs lr
     parser.add_argument("--lbfgs_iter", type=int, default=700) # lbfgs iters
     parser.add_argument("--lbfgs_lr", type=float, default=1.0) # lbfgs lr
     parser.add_argument("--lr", type=float, default=8e-4) # adam lr
-    parser.add_argument("--use_scheduler", type=bool, default=False)
+    parser.add_argument("--use_scheduler", action="store_true", default=False)
     parser.add_argument("--lr_step_size", type=int, default=2000)
     parser.add_argument("--lr_gamma", type=float, default=0.8) 
-    parser.add_argument("--log_freq", type=dict, default={"adam": 500, "lbfgs": 10,"proj_adam":500}) # in trainer.py for print loss
+    parser.add_argument("--log_freq", type=dict, default={"adam": 500, "lbfgs": 10,"proj_adam":500,"lm":100}) # in trainer.py for print loss
     parser.add_argument("--proj_g_update_freq", type=int, default=100) # in trainer.py for updating projection g
-    parser.add_argument("--checkpoint_freq", type=dict, default={"adam": 10000, "lbfgs": 200,"proj_adam":10000}) # in checkpoint_callback.py for saving model
+    parser.add_argument("--checkpoint_freq", type=dict, default={"adam": 10000, "lbfgs": 200,"proj_adam":10000,"lm":10000}) # in checkpoint_callback.py for saving model
 
     
     # --- plot ---
     parser.add_argument("--save_dir", type=str, default="/home/zhy/Zhou/DLPDEs/dlpdes/outputs/possion")
-    parser.add_argument("--plot_freq", type=dict, default={"adam": 500, "lbfgs": 50,"proj_adam":500} ) # in error_plot_callback.py for plot error
-    parser.add_argument("--loss_freq", type=dict, default={"adam": 5, "lbfgs": 1,"proj_adam":5}) # in checkpoint_callback.py for saving model
+    parser.add_argument("--plot_freq", type=dict, default={"adam": 500, "lbfgs": 50,"proj_adam":500,"lm":200} ) # in error_plot_callback.py for plot error
+    parser.add_argument("--loss_freq", type=dict, default={"adam": 5, "lbfgs": 1,"proj_adam":5,"lm":5}) # in checkpoint_callback.py for saving model
     parser.add_argument("--eval_grid_n", type=int, default=100)
     
     # --- rank callback ---
-    parser.add_argument("--rank_freq", type=dict, default={"adam": 5000, "lbfgs": 30,"proj_adam":5000}) # in rank_callback.py for evaluating rank
+    parser.add_argument("--rank_freq", type=dict, default={"adam": 5000, "lbfgs": 30,"proj_adam":5000,"lm":200}) # in rank_callback.py for evaluating rank
     parser.add_argument("--int_grid_n", type=int, default=30)
     parser.add_argument("--int_domain_lowx", type=float, default=-1.0)
     parser.add_argument("--int_domain_highx", type=float, default=1.0)
@@ -90,11 +90,12 @@ def main():
     pipe = Pipeline(args=args, equation=eq, callbacks=callbacks)
     
     print(f"--- Starting {args.eq.upper()} train ---")
-    pipe.trainer.train_adam(pipe.data)
-    pipe.reset_model()  
-    pipe.reset_trainer()
-    # pipe.trainer.train_lbfgs(pipe.data)
-    pipe.trainer.train_proj_adam(pipe.data)
+    # pipe.trainer.train_adam(pipe.data)
+    # pipe.reset_model()  
+    # pipe.reset_trainer()
+    # # pipe.trainer.train_lbfgs(pipe.data)
+    # pipe.trainer.train_proj_adam(pipe.data)
+    pipe.trainer.train_lm(pipe.data)
     print(f"--- {args.eq.upper()} train finished ---")
     
 

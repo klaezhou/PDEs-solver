@@ -69,5 +69,14 @@ save_dir/
 ```
 
 ```
+git checkout main        # 切回 main
+git pull                 # 更新远程 main
+git merge dev            # 合并 dev 的改动
+git push      
 
+
+git checkout dev        # 确认在 dev 分支
+git add .
+git commit -m "日常更新内容"
+git push                 # 会自动推送到 origin/dev
 ```

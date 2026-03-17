@@ -1,10 +1,31 @@
-# Current structure (`dlpdes/`)
+
+
+# Table of Contents
+- [Table of Contents](#table-of-contents)
+  - [Overview](#overview)
+  - [Running codes](#running-codes)
+  - [Equation](#equation)
+    - [Equation Methods](#equation-methods)
+  - [Pipeline](#pipeline)
+  - [data/](#data)
+  - [model/](#model)
+  - [train](#train)
+    - [🚀 Optimization methods](#-optimization-methods)
+      - [___Levenber-Marquardt method___](#levenber-marquardt-method)
+      - [___Adam___](#adam)
+      - [___projection Adam___](#projection-adam)
+  - [metrics](#metrics)
+  - [viz](#viz)
+  - [outputs](#outputs)
+  - [Version update](#version-update)
+    - [\[__0.01__\] - 2026.3.8](#001---202638)
+    - [\[__0.02__\] - 2026.3.17](#002---2026317)
 
 ## Overview
 
 `dlpdes/` has now evolved into a relatively complete PINN experimental framework. Its overall structure is organized by layers: **equation definition → data generation → model construction → training orchestration → metric analysis → visualization callbacks**. Each script first parses arguments, constructs the equation object and feature extractor through factory functions, then assembles the `Pipeline` together with multiple callbacks.
 
-## Top-level layout
+## Running codes
 
 - `ac_run.py`  
   Entry point for the Allen–Cahn task. It defines spatio-temporal sampling, PDE/BC/IC weights, model hyperparameters, training frequencies, and rank-analysis settings, while wiring together `ErrorPlotCallback`, `LossPlotCallback`, `CheckpointCallback`, and `RankCallback`. The training flow is `train_adam() → reset_model() → reset_trainer() → train_proj_adam()`.
@@ -18,58 +39,115 @@
 - `Readme.md`  
   A directory-level documentation file summarizing that this experiment folder focuses on solving PDEs with PINNs / MoE, with particular attention to expert weight dynamics and numerical rank monitoring.
 
-## Equation/
 
-The `Equation/` layer is responsible for **defining the physical problem itself**, including loss construction, sampled data organization, exact solutions, error plotting, and ground-truth / prediction visualization. Its internal files include `__init__.py`, `_base.py`, `allen_cahn.py`, `approximation.py`, `cos.py`, `factory.py`, and `poisson.py`.
+## Equation
 
-- `_base.py`  
-  Defines the abstract `BaseEquation` interface, requiring subclasses to implement `compute_loss()`, `get_data()`, `exact_solution()`, `plot_error()`, `plot_ground_truth()`, and `plot_u()`. This gives the layer a stable polymorphic interface.
+The `Equation/` layer is responsible for **defining the physical problem itself**, including:
 
-- `factory.py`  
-  Uses `get_equation(args)` to map the command-line argument `--eq` to a concrete equation class. It currently explicitly supports `poisson`, `ac`, and `approximation`.  [__add new equation should change mapping__]
+- Loss construction
 
-- `poisson.py`  
-  **$-∆u=f$**. Implements the 2D Poisson equation, including the forcing term `f(x)`, boundary condition `g(x)`, Laplacian computation, PDE + boundary losses, training data generation, as well as error heatmaps, ground-truth plots, prediction plots, and gate visualization.  
+---
 
-- `allen_cahn.py`  
-  **$u_t-\epsilon^2 u_{xx}+u^3-u=s(x,t)$**Implements the 1D Allen–Cahn space-time problem. It uses a manufactured solution to construct the source term, and the loss consists of three parts: PDE residual, periodic boundary conditions, and initial conditions. The data dictionary includes `X_f`, `X_bL`, `X_bR`, `X_i`, `s_f`, and `u_i`.
+### Equation Methods
 
-- `approximation.py`  
-  **$f-f^*$** Implements a baseline function-approximation task without PDE differential terms. It essentially minimizes the mean squared error of `u(x) - f(x)` and is used to compare network expressivity and rank behavior.
+-  `compute_loss(model, data: dict)`
 
-## Pipeline/
+    This function computes losses based on the given input data and returns a dictionary with the following structure:
 
-`Pipeline/` currently contains `__init__.py` and `pipeline.py`, serving as the assembly layer of the whole project. It uses lazy loading to manage four components: `model`, `trainer`, `data_loader`, and `data`, and links together `args`, `equation`, and `callbacks` through dependency injection. It also already supports `reset_model()` and `reset_trainer()`, making it convenient to switch training stages or rebuild the model within the same script.
+    ```python
+    {
+      "losses": {
+        "total": <total loss with gradient>, # ready to backpropagation
+        "pde" (optional): <PDE loss component>,
+        "bc"  (optional): <Boundary loss component>
+      },
+      "residuals": {
+        "all": <residual values>  # ready for lm methods
+      }
+    }
+    ```
+
+## Pipeline
+
+`Pipeline/` 
 
 ## data/
 
-`data/` currently contains `__init__.py` and `data_loader.py`, and is responsible for low-level sampling utilities. At the current stage, it provides methods such as random sampling inside a 2D box, random sampling on 2D boundaries, and regular-grid interior sampling in 2D, which can be freely combined by different equation classes inside `get_data()`.
+`data/` 
 
 ## model/
 
-The `model/` layer is responsible for network definitions and feature interfaces. It currently contains `__init__.py`, `factory.py`, `mlp.py`, `moe_d.py`, and `moe_d_w.py`. The factory functions jointly manage both **model instantiation** and the selection of the **penultimate feature getter**, which allows the rank-analysis module to reuse a unified interface across different network architectures.
+`model/` 
 
-- `factory.py`  
-  `get_model(args)` currently supports `mlp`, `moe_d`, and `moe_d_w`, while `get_feature_getter(args)` returns the corresponding feature extraction function for later Gram / epsilon-rank computation.
+## train
 
-- `mlp.py`  
-  Implements a standard multilayer perceptron. Structurally, it is divided into a feature extraction body and a bias-free output head, and provides interfaces such as `forward_penultimate()` / `mlp_penultimate_getter` for extracting penultimate-layer representations.
+`train/` 
+### 🚀 Optimization methods  
+#### ___Levenber-Marquardt method___
+  a quasi-newton method $h \leftarrow (J^T J + \lambda I )^{-1} J^T r$ , phase set `lm`.
+  ```python
+  Pipeline.trainer.train_lm(Pipeline.data) # apply train_lm to train the model in trainer
+  ```
+  **Parameter:**  
 
-- `moe_d.py`  
-  Implements a dense-gate MoE, organized into four levels: `Expert`, `Gating`, `MoE`, and `MOE_dense`. It also provides `moe_penultimate_getter()`, whose features are formed by concatenating **each expert’s penultimate hidden activation × gating weight**.
+  | param name | default | type | description |
+  | :--- | :--- | :--- | :--- |
+  | `lm_epochs` | `1500` | `int` | **Number of iterations:** total number of LM training iterations. |
+  | `lm_gama` | `2.0` | `float` | **Damping update coefficient ($\gamma$):** must satisfy $\gamma > 1$. |
+  | `lm_yita1` | `1e-16` | `float` | **Acceptance threshold ($\eta_1$):** lower bound for the update quality, i.e. require $\rho > \eta_1$. |
+  | `lm_yita2` | `1e-6` | `float` | **Gradient threshold ($\eta_2$):** threshold used in the gradient update condition. |
+  | `lm_min_miu` | `1e-16` | `float` | **Minimum $\mu$:** lower bound of the damping parameter. |
+  | `lm_max_miu` | `1e100` | `float` | **Maximum $\mu$:** upper bound of the damping parameter. |
+  | `lm_train_tol` | `1e-5` | `float` | **Stopping criterion:** stop training when the gradient norm is below this tolerance. <span style="color: yellow;">Not enabled yet.</span> |
+  | `lm_miu` | `1e-3` | `float` | **Damping parameter ($\mu$):** increased when an update is rejected and decreased when an update is accepted. |
+  | `lm_beta_train` | `False` | `bool` | **Subset update:** set to `True` to enable subset-based LM training. |
 
-- `moe_d_w.py`  
-  Implements another dense-weight MoE variant, preserving the mixed expert + gating structure, and serves as the second MoE candidate model in the current experiments.
+  The details of Levenberg-Marquardt method can be found in lm notes.
 
-## train/
+**💡 Note :** 
+  - The loss and residuals should be computed using `torch.func.jacrev`. In the equation-level implementation of `compute_loss`, include a mode such as `jacrev`.
+  - The residuals are stored in `loss_dict["residuals"]["all"]`.
+  - To ensure good training performance, the code sets the default value of $\beta$ to $\frac{1}{2} N_{\text{params}}$ in this regime.
+  
+---
+#### ___Adam___
 
-`train/` currently contains `LM.py`, `__init__.py`, `proj.py`, and `trainer.py`. This layer is responsible for training loops and projection-related algorithms. `trainer.py` is the core training orchestrator, uniformly managing optimizers, schedulers, callback triggering across different phases, and extracting `feature_getter` from `RankCallback` to support projection-based training. `proj.py` implements the minimum eigenpair, `j_min`-related functions based on feature mappings, and related utilities. `LM.py` is still a placeholder at this stage.
+  adam optimizer, phase set `adam`
+  ```python
+      Pipeline.trainer.train_adam(Pipeline.data)  # train the model using adam 
+  ```
+  The method includes function: `_step_adam()` and `train_adam` 
+  | param name | default | type | description |
+  | :--- | :--- | :--- | :--- |
+  | `adam_iters` | `10000` | `int` | **Number of iterations:**: total number of Adam training iterations. |
+  | `adam_lr` | `1e-3` | `float` | **learning rate**: learning rate of adam |
+  | `use_scheduler` | `True` | `bool` | **Use scheduler**: reduce the lr in during the training |
+  | `sc_step_size` | `5000` | `int` | **scheduler frequency**: reduce the lr freq |
+  | `sc_gamma` | `0.7` | `float` | **scheduler gamma**: the cofficients of reduce lr |
 
-## metrics/
+
+  **💡 Note :** 
+  - adam implemented by `torch.autograd.grad` , `compute_loss`'s mode set in `backward`
+
+
+
+
+
+      
+
+---
+#### ___projection Adam___ 
+  <span style="color: yellow;">Not enabled yet</span>
+
+
+  
+
+
+## metrics
 
 `metrics/` currently contains `__init__.py` and `epsilon_rank2D.py`. Its core functionality is to construct the Gram matrix based on 2D trapezoidal integration and automatically compute the epsilon-rank of model features. It already implements 2D grid generation, 2D trapezoidal weights, and `epsilon_rank_model_2d_trapz_auto()`. This module is exactly the core metric component for the project’s current focus on **numerical rank monitoring / expert collapse diagnosis**.
 
-## viz/
+## viz
 
 `viz/` currently contains `__init__.py`, `callbacks.py`, `checkpoint_callback.py`, `error_plot_callback.py`, `loss_plot_callback.py`, `rank_callback.py`, and `time_plot_callback.py`, forming a fairly complete callback system.
 
@@ -91,10 +169,23 @@ The `model/` layer is responsible for network definitions and feature interfaces
 - `time_plot_callback.py`  
   Plots loss curves against time rather than iteration count, making it useful for comparing the time efficiency of different training stages and methods.
 
-## outputs/
+## outputs
 
-`outputs/` is the experiment results directory. According to the current README, its output structure is rooted at `save_dir/`, and includes at least the checkpoint files under `_log_model/`, together with the logs and figure outputs generated during training.
+`outputs/` is the experiment results directory. Its output structure is rooted at `save_dir/`, and includes at least the checkpoint files under `_log_model/`, together with the logs and figure outputs generated during training.
 
----
 
-If needed, I can next compress this into a more formal CHANGELOG style, such as using sections like `### Added / ### Refactored / ### Current layout`.
+
+## Version update
+
+### [__0.01__] - 2026.3.8  
+  - First update
+
+### [__0.02__] - 2026.3.17
+
+  - Updated the loss dictionary structure.
+  - Implemented the LM optimizer.
+  - Modified `compute_loss` so that it builds the gradient graph according to the selected mode.
+  - Added new files: `train/utils.py` and `train/lm.py`.
+
+
+
