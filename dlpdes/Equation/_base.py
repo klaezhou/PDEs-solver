@@ -5,15 +5,19 @@ class BaseEquation:
     def __init__(self, args):
         self.args = args
     @abstractmethod
-    def compute_loss(self, model, batch: dict):
+    def compute_loss(self, model, batch: dict,mode : bool):
         """
         batch is a dict containing necessary data, e.g.,
         batch["X_f"], batch["X_bnd"], batch["y_bnd"] ...
         return a dict of losses, e.g.,
-        {
+        {"loss":{
             "total": total_loss, with grad
             "pde": pde_loss, item(),
             "bc": boundary_loss, item()
+            },
+        "residuals": {
+            "all": residuals values, with grad ,if mode=="jacrev"
+        }
         }
         """
         pass

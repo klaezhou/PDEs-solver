@@ -94,3 +94,7 @@ class Pipeline:
             print("[Pipeline] generate data...")
             self._data = self.eq.get_data(self.data_loader)
         return self._data
+    
+    def refresh_data(self):
+        self._data = self.eq.get_data(self.data_loader)
+        

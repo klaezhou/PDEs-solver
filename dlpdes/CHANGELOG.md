@@ -6,9 +6,11 @@
   - [Running codes](#running-codes)
   - [Equation](#equation)
     - [Equation Methods](#equation-methods)
+      - [___Poisson___](#poisson)
   - [Pipeline](#pipeline)
   - [data/](#data)
   - [model/](#model)
+    - [🚀 `MLP_2.py`](#-mlp_2py)
   - [train](#train)
     - [🚀 Optimization methods](#-optimization-methods)
       - [___Levenber-Marquardt method___](#levenber-marquardt-method)
@@ -50,10 +52,9 @@ The `Equation/` layer is responsible for **defining the physical problem itself*
 
 ### Equation Methods
 
--  `compute_loss(model, data: dict)`
+-  `compute_loss(model, data: dict,mode: bool)`
 
     This function computes losses based on the given input data and returns a dictionary with the following structure:
-
     ```python
     {
       "losses": {
@@ -66,6 +67,19 @@ The `Equation/` layer is responsible for **defining the physical problem itself*
       }
     }
     ```
+    **💡 Note :** 
+    - mode: default `jacrev`.  `jacrev` will compute the loss through by `torch.func. jacrev , vmap` approach. `backward` will compute the loss through by `torch.autograd.gard` approach. 
+  - 
+  
+#### ___Poisson___
+  If need to train a poisson equation, set argument `eq="poisson"`
+  $$
+  \begin{cases}
+  -\Delta u(x,y) = f(x,y), & (x,y)\in \Omega, \\
+  u(x,y) = g(x,y), & (x,y)\in \partial\Omega .
+  \end{cases}
+  $$
+
 
 ## Pipeline
 
@@ -78,6 +92,11 @@ The `Equation/` layer is responsible for **defining the physical problem itself*
 ## model/
 
 `model/` 
+
+### 🚀 `MLP_2.py` 
+  - The mlp model for solving elliptic PDEs. 
+  - Using intermediate variables to compute the loss. 
+  - return u and q as output
 
 ## train
 
@@ -108,6 +127,7 @@ The `Equation/` layer is responsible for **defining the physical problem itself*
   - The loss and residuals should be computed using `torch.func.jacrev`. In the equation-level implementation of `compute_loss`, include a mode such as `jacrev`.
   - The residuals are stored in `loss_dict["residuals"]["all"]`.
   - To ensure good training performance, the code sets the default value of $\beta$ to $\frac{1}{2} N_{\text{params}}$ in this regime.
+  - group jacobian can be used in the future
   
 ---
 #### ___Adam___
@@ -121,7 +141,7 @@ The `Equation/` layer is responsible for **defining the physical problem itself*
   | :--- | :--- | :--- | :--- |
   | `adam_iters` | `10000` | `int` | **Number of iterations:**: total number of Adam training iterations. |
   | `adam_lr` | `1e-3` | `float` | **learning rate**: learning rate of adam |
-  | `use_scheduler` | `True` | `bool` | **Use scheduler**: reduce the lr in during the training |
+  | `use_scheduler` | `False` | `bool` | **Use scheduler**: reduce the lr in during the training |
   | `sc_step_size` | `5000` | `int` | **scheduler frequency**: reduce the lr freq |
   | `sc_gamma` | `0.7` | `float` | **scheduler gamma**: the cofficients of reduce lr |
 
@@ -185,7 +205,8 @@ The `Equation/` layer is responsible for **defining the physical problem itself*
   - Updated the loss dictionary structure.
   - Implemented the LM optimizer.
   - Modified `compute_loss` so that it builds the gradient graph according to the selected mode.
-  - Added new files: `train/utils.py` and `train/lm.py`.
+  - Added new files: `train/utils.py` and `train/lm.py`. 
+  - only ready for `--eq "poisson"  -- model "mlp"`
 
 
 

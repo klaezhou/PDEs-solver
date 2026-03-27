@@ -22,7 +22,7 @@ class Trainer:
         self.optimizer = optim.Adam(self.model.parameters(), lr=self.adam_lr)
 
         # scheduler is optional
-        self.use_scheduler = getattr(self.args, "use_scheduler", True)
+        self.use_scheduler = getattr(self.args, "use_scheduler", False)
         self.scheduler = optim.lr_scheduler.StepLR(
             self.optimizer,
             step_size=getattr(self.args, "sc_step_size", 5000),
@@ -90,7 +90,7 @@ class Trainer:
         # 初始化参数的动量、平方梯度和更新步数
         # (1) train begin
         epochs=self.epochs
-        self._set_phase("proj_adam")
+        _set_phase(self,"proj_adam")
         for cb in self.callbacks:
             cb.on_train_begin(self)
             
@@ -170,7 +170,7 @@ class Trainer:
         self.model.train()
         epochs=self.epochs
         # (1) train begin
-        self._set_phase("adam")
+        _set_phase(self,"adam")
         for cb in self.callbacks:
             cb.on_train_begin(self)
         
@@ -200,7 +200,7 @@ class Trainer:
         """
         self.model.train()
         
-        self._set_phase("lbfgs")
+        _set_phase(self,"lbfgs")
         
         optimizer = optim.LBFGS(
             self.model.parameters(),
@@ -264,8 +264,8 @@ class Trainer:
                 continue
             log_str += f" | {k.upper()}: {losses['loss'][k]:.6e}"
 
-        lr = self.optimizer.param_groups[0]["lr"]
-        log_str += f" | LR: {lr:.3e}"
+        # lr = self.optimizer.param_groups[0]["lr"]
+        # log_str += f" | LR: {lr:.3e}"
 
         print(log_str)
         

@@ -23,7 +23,7 @@ class PoissonEquation(BaseEquation):
 
         x1 = x[:, 0:1]
         x2 = x[:, 1:2]
-        return (34*math.pi**2) * torch.sin(5*math.pi * x1) * torch.sin(3*math.pi * x2)
+        return (2*math.pi**2) * torch.sin(1*math.pi * x1) * torch.sin(1*math.pi * x2)
 
     def g(self, x):
         """
@@ -33,6 +33,23 @@ class PoissonEquation(BaseEquation):
         """
         # example: u=0 at boundary
         return torch.zeros((x.shape[0], 1), device=x.device, dtype=x.dtype)
+    def gradient_jacrev(self, model_fn, x):
+        """
+        model_fn: callable, x -> [N,1]
+        x: [N, dim]
+        return: [N,1]
+        """
+        def scalar_u(x_single):
+            # x_single: [dim]
+            y = model_fn(x_single.unsqueeze(0))   # [1,dim] -> [1,1]
+            return y.squeeze()                    # scalar
+
+        def lap_single(x_single):
+            g=jacrev(scalar_u)(x_single)       # [dim]
+            return 0.5*torch.sum(g**2)
+
+        lap = vmap(lap_single)(x)                 # [N]
+        return lap.unsqueeze(1)                   # [N,1]
     
     def laplacian_jacrev(self, model_fn, x):
         """
@@ -94,6 +111,7 @@ class PoissonEquation(BaseEquation):
             # print(lap_u)
         elif mode == "jacrev":
             # print("jacrev")
+            # lap_u=self.gradient_jacrev(model, x_f) #ritz
             lap_u = self.laplacian_jacrev(model, x_f)
         f_f = batch.get("f_f", self.f(x_f))
 
@@ -114,6 +132,8 @@ class PoissonEquation(BaseEquation):
         total_loss = w_pde * loss_pde + w_bc * loss_bc
         r=torch.cat([r_f.flatten(), r_b.flatten()])
         r=r/ math.sqrt(r.numel())
+        if mode=="backward":
+            r=r.detach()
     # --- 关键修改：返回字典 ---
         loss_dict = {
         "loss":{ 
@@ -159,7 +179,7 @@ class PoissonEquation(BaseEquation):
     
     def exact_solution(self, x):
             """return exact solution at x for error analysis"""
-            return torch.sin(5*torch.pi * x[:, 0:1]) * torch.sin(3*torch.pi * x[:, 1:2])
+            return torch.sin(1*torch.pi * x[:, 0:1]) * torch.sin(1*torch.pi * x[:, 1:2])
         
     @torch.no_grad()
     def plot_error(self, model, it: int, save_dir: str):

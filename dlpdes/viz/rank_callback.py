@@ -43,8 +43,10 @@ class RankCallback(Callback):
     def on_train_end(self, trainer):
         r, evals = epsilon_rank_model_2d_trapz_auto(trainer.model, self.feature_getter,self.nx,self.ny,self.lowx,self.highx,self.lowy,self.highy, eps=self.eps)
         # features_getter: model, x_grid -> Phi [N,m]
-
-        it=self.iters[-1]+1
+        if self.iters:
+            it=self.iters[-1]+1
+        else:
+            it=[-1]
         self.iters.append(it)
         self.ranks.append(r)
         self._save_plot(it)

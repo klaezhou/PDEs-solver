@@ -1,9 +1,8 @@
 #\Equation/factory.py
 from .poisson import PoissonEquation
 from .allen_cahn import AllenCahnEquation
-from .cos import CosEquation
 from .approximation import Approximation
-# from .burgers import BurgersEquation 
+from .poisson_2 import PoissonEquation_2
 
 def get_equation(args):
     """
@@ -12,7 +11,8 @@ def get_equation(args):
     mapping = {
         "poisson": PoissonEquation,
          "ac" : AllenCahnEquation,
-         "approximation":Approximation
+         "approximation":Approximation,
+         "poisson_2": PoissonEquation_2
     }
     target_class = mapping.get(args.eq.lower())
     if not target_class:
