@@ -45,6 +45,33 @@ class DataLoader:
         pts = torch.stack([X.reshape(-1), Y.reshape(-1)], dim=1)  # [N, 2]
         return pts
 
+    def sample_interior_grid_2d_perturbation(self, nx: int, ny: int, low=0.0, high=1.0, exclude_boundary: bool = True):
+        """
+        Do the perturbation of x
+        """
+        if exclude_boundary:
+            xs = torch.linspace(low, high, steps=nx + 2, device=self.device)[1:-1]
+            ys = torch.linspace(low, high, steps=ny + 2, device=self.device)[1:-1]
+
+            xs = xs + torch.randn_like(xs) * 0.001
+            ys = ys + torch.randn_like(ys) * 0.001
+
+            xs = torch.clamp(xs, min=low, max=high)
+            ys = torch.clamp(ys, min=low, max=high)
+        else:
+            xs = torch.linspace(low, high, steps=nx, device=self.device)
+            ys = torch.linspace(low, high, steps=ny, device=self.device)
+
+            xs = xs + torch.randn_like(xs) * 0.001
+            ys = ys + torch.randn_like(ys) * 0.001
+
+            xs = torch.clamp(xs, min=low, max=high)
+            ys = torch.clamp(ys, min=low, max=high)
+
+        X, Y = torch.meshgrid(xs, ys, indexing="ij")  # [nx, ny]
+        pts = torch.stack([X.reshape(-1), Y.reshape(-1)], dim=1)  # [N, 2]
+        return pts
+
     def sample_boundary_grid_2d(self, n_per_edge: int, low=0.0, high=1.0, include_corners: bool = True):
         """
         Equidistant sampling on the boundary of a 2D square/box.

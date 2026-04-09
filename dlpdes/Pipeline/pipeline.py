@@ -39,9 +39,13 @@ class Pipeline:
         torch.manual_seed(self.seed)
         if torch.cuda.is_available():
             torch.cuda.manual_seed_all(self.seed)
+            
         if getattr(self.args, "use_double", True):
             print("[Pipeline] Using double precision for training.")
             torch.set_default_dtype(torch.float64)
+            
+        print("torch.get_default_dtype: ", torch.get_default_dtype())
+            
         
     @property
     def model(self):
@@ -95,6 +99,15 @@ class Pipeline:
             self._data = self.eq.get_data(self.data_loader)
         return self._data
     
-    def refresh_data(self):
+    def _refresh_data(self):
         self._data = self.eq.get_data(self.data_loader)
+    
+    def load_checkpoint(self, path):
+        """Load checkpoint from path."""
+        checkpoint = torch.load(path, map_location=self.args.device)
+        self.model.load_state_dict(checkpoint["model"])
+        self.model.to(self.args.device)
+        print(f"[Pipeline] load model from {path} ")
+        return checkpoint["iter"]
+        
         

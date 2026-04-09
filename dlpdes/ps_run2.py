@@ -2,12 +2,12 @@ import torch
 import argparse
 from Equation.factory import get_equation 
 from Pipeline.pipeline import Pipeline
-from viz.callbacks import Callback
-from viz.error_plot_callback import ErrorPlotCallback
-from viz.loss_plot_callback import LossPlotCallback
-from viz.checkpoint_callback import CheckpointCallback
-from viz.rank_callback import RankCallback
-from viz.time_plot_callback import TimePlotCallback
+from cb.callbacks import Callback
+from cb.error_plot_callback import ErrorPlotCallback
+from cb.loss_plot_callback import LossPlotCallback
+from cb.checkpoint_callback import CheckpointCallback
+from cb.rank_callback import RankCallback
+from cb.time_plot_callback import TimePlotCallback
 from model.factory import get_feature_getter
 def parse_args():
     parser = argparse.ArgumentParser(description="PINNs Lightweight Solver")
@@ -22,8 +22,8 @@ def parse_args():
     parser.add_argument("--sample_method", type=str, default="grid") # random or grid
     parser.add_argument("--Nf", type=int, default=5000)
     parser.add_argument("--Nb", type=int, default=100)
-    parser.add_argument("--nx", type=int, default=30)
-    parser.add_argument("--ny", type=int, default=30)
+    parser.add_argument("--nx", type=int, default=40)
+    parser.add_argument("--ny", type=int, default=40)
     parser.add_argument("--n_per_edge", type=int, default=100)
     parser.add_argument("--w_pde", type=float, default=1.0)
     parser.add_argument("--w_bc", type=float, default=1.0)

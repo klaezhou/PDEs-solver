@@ -3,7 +3,7 @@ from .poisson import PoissonEquation
 from .allen_cahn import AllenCahnEquation
 from .approximation import Approximation
 from .poisson_2 import PoissonEquation_2
-
+from .dcei import DCEIEquation
 def get_equation(args):
     """
     根据命令行参数 --eq 自动选择对应的方程类
@@ -12,7 +12,8 @@ def get_equation(args):
         "poisson": PoissonEquation,
          "ac" : AllenCahnEquation,
          "approximation":Approximation,
-         "poisson_2": PoissonEquation_2
+         "poisson_2": PoissonEquation_2,
+         "dcei": DCEIEquation
     }
     target_class = mapping.get(args.eq.lower())
     if not target_class:

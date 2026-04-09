@@ -1,10 +1,10 @@
 import torch
 import torch.optim as optim
 from torch.optim import _functional as F
-from viz.callbacks import Callback
+from cb.callbacks import Callback
 from torch.nn.utils import parameters_to_vector, vector_to_parameters
 from train.proj import proj_step , Projection
-from viz.rank_callback import RankCallback
+from cb.rank_callback import RankCallback
 from .LM import levenberg_marquardt
 from .utils import *
 class Trainer:
@@ -20,13 +20,17 @@ class Trainer:
         self.args = args
         self.adam_lr=getattr(self.args, "adam_lr", 1e-3)
         self.optimizer = optim.Adam(self.model.parameters(), lr=self.adam_lr)
+        self.data=None
 
         # scheduler is optional
         self.use_scheduler = getattr(self.args, "use_scheduler", False)
-        self.scheduler = optim.lr_scheduler.StepLR(
+        self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
             self.optimizer,
-            step_size=getattr(self.args, "sc_step_size", 5000),
-            gamma=getattr(self.args, "sc_gamma", 0.7)
+            mode="min",
+            factor=0.5,
+            patience=20,
+            threshold=1e-4,
+            min_lr=1e-6
         )
         
         self.epochs = getattr(self.args, "adam_iters", 10000)
@@ -53,7 +57,7 @@ class Trainer:
         
         self.log_freq=None
         self.iter_base=0
-
+        self.param_delta={} # dict for test param delta on different data
         
         self.callbacks = callbacks or []
         self.l_history = []   # plot loss curve
@@ -79,23 +83,150 @@ class Trainer:
         self.optimizer.step()
 
         if self.use_scheduler and self.scheduler is not None:
-            self.scheduler.step()
+            self.scheduler.step(total_loss)
 
         # convert for logging (Tensor -> float)
         log_losses =loss_out
 
         return log_losses
     
+
+
+
+    def train_adam(self, data):
+        " use adam to train for self.epochs "
+        # import the data if needed
+        if self.data is None:
+            self.data =data
+        data=self.data
+        
+        
+        self.model.train()
+        epochs=self.epochs
+        # (1) train begin
+        _set_phase(self,"adam")
+        for cb in self.callbacks:
+            cb.on_train_begin(self)
+        
+        it=self.iter_base
+        for epoch in range(epochs):
+             # losses is  log_losses which is a dict e.g. {"total":..., "pde":..., "bc":...}  defined in eq.compute_loss
+            losses = self._step_adam(data)
+
+            # epoch is 0-based; print at 1-based step
+            it += 1
+            if it % self.log_freq == 0:
+                self._print_log(it, losses)
+            # (2) iter end
+            for cb in self.callbacks:
+                cb.on_iter_end(self, it, losses)
+                
+        # (3) train end
+        self.iter_base += epochs
+        for cb in self.callbacks:
+            cb.on_train_end(self)
+            
+            
+    def train_lbfgs(self, data):
+        """
+        One LBFGS phase (usually after Adam).
+        LBFGS uses full-batch + closure.
+        """
+        self.model.train()
+        if self.data is None:
+            self.data =data
+        data=self.data
+        _set_phase(self,"lbfgs")
+        
+        optimizer = optim.LBFGS(
+            self.model.parameters(),
+            lr=self.lbfgs_lr,
+            max_iter=self.lbfgs_max_iter,
+            history_size=50,      # 先大幅减小，甚至 5
+            line_search_fn="strong_wolfe" # 必须开启强沃尔夫线搜索
+        )
+
+        it_base = self.iter_base
+
+        def closure():
+            optimizer.zero_grad(set_to_none=True)
+            refresh_batch(data)
+            loss_out = self.eq.compute_loss(self.model, data,mode="backward")
+            if isinstance(loss_out, dict):
+                total_loss = loss_out["loss"]["total"]
+            else:
+                total_loss = loss_out
+
+            total_loss.backward()
+            return total_loss
+
+        # LBFGS step will call closure multiple times internally
+        for step in range(self.lbfgs_iter):
+            step=step+1
+            loss = optimizer.step(closure)
+
+            # log once after LBFGS
+            loss_out = self.eq.compute_loss(self.model, data,mode="backward")
+
+
+            # trigger callbacks once (as "iter end")
+            it = it_base +step
+            if it % self.log_freq == 0:
+                self._print_log(it, loss_out)
+            for cb in self.callbacks:
+                cb.on_iter_end(self, it, loss_out)           
+
+        for cb in self.callbacks:
+            cb.on_train_end(self)
+
+
+        return loss_out
+
+    def train_lm(self, data):
+        self.model.train()
+        if self.data is None:
+            self.data =data
+        data=self.data
+        return levenberg_marquardt(self, data)
+    
+    
+
+    def _print_log(self, it, losses):
+        """print training log"""
+        total = losses['loss'].get("total", None)
+        if total is None:
+            raise KeyError("loss dict must contain key 'total'")
+
+        log_str = f"[Iter {it:06d}] Total: {total:.6e}"
+
+        for k in sorted(losses['loss'].keys()):
+            if k == "total":
+                continue
+            log_str += f" | {k.upper()}: {losses['loss'][k]:.6e}"
+
+        # lr = self.optimizer.param_groups[0]["lr"]
+        # log_str += f" | LR: {lr:.3e}"
+
+        print(log_str)
+        
+        
+
+
+
+
     def train_proj_adam(self, data):
         # 初始化参数的动量、平方梯度和更新步数
         # (1) train begin
         epochs=self.epochs
+        if self.data is None:
+            self.data =data
+        data=self.data
         _set_phase(self,"proj_adam")
         for cb in self.callbacks:
             cb.on_train_begin(self)
             
         self.optimizer_head= optim.Adam(self.model.head.parameters(), lr=self.args.lr)
-            
+        
         feature_params = list(self.model.feature.parameters()) 
         exp_avg = [torch.zeros_like(param) for param in feature_params]
         exp_avg_sq = [torch.zeros_like(param) for param in feature_params]
@@ -163,110 +294,3 @@ class Trainer:
         # (3) train end
         for cb in self.callbacks:
             cb.on_train_end(self)
-
-
-    def train_adam(self, data):
-        " use adam to train for self.epochs "
-        self.model.train()
-        epochs=self.epochs
-        # (1) train begin
-        _set_phase(self,"adam")
-        for cb in self.callbacks:
-            cb.on_train_begin(self)
-        
-        it=self.iter_base
-        for epoch in range(epochs):
-             # losses is  log_losses which is a dict e.g. {"total":..., "pde":..., "bc":...}  defined in eq.compute_loss
-            losses = self._step_adam(data)
-
-            # epoch is 0-based; print at 1-based step
-            it += 1
-            if it % self.log_freq == 0:
-                self._print_log(it, losses)
-            # (2) iter end
-            for cb in self.callbacks:
-                cb.on_iter_end(self, it, losses)
-                
-        # (3) train end
-        self.iter_base += epochs
-        for cb in self.callbacks:
-            cb.on_train_end(self)
-            
-            
-    def train_lbfgs(self, data):
-        """
-        One LBFGS phase (usually after Adam).
-        LBFGS uses full-batch + closure.
-        """
-        self.model.train()
-        
-        _set_phase(self,"lbfgs")
-        
-        optimizer = optim.LBFGS(
-            self.model.parameters(),
-            lr=self.lbfgs_lr,
-            max_iter=self.lbfgs_max_iter,
-            line_search_fn="strong_wolfe"
-        )
-
-        it_base = self.iter_base
-
-        def closure():
-            optimizer.zero_grad(set_to_none=True)
-
-            loss_out = self.eq.compute_loss(self.model, data)
-            if isinstance(loss_out, dict):
-                total_loss = loss_out["loss"]["total"]
-            else:
-                total_loss = loss_out
-
-            total_loss.backward()
-            return total_loss
-
-        # LBFGS step will call closure multiple times internally
-        for step in range(self.lbfgs_iter):
-            step=step+1
-            loss = optimizer.step(closure)
-
-            # log once after LBFGS
-        
-            loss_out = self.eq.compute_loss(self.model, data)
-
-
-            # trigger callbacks once (as "iter end")
-            it = it_base +step
-            if it % self.log_freq == 0:
-                self._print_log(it, loss_out)
-            for cb in self.callbacks:
-                cb.on_iter_end(self, it, loss_out)           
-
-        for cb in self.callbacks:
-            cb.on_train_end(self)
-
-
-        return loss_out
-
-    def train_lm(self, data):
-        self.model.train()
-        return levenberg_marquardt(self, data)
-    
-
-    def _print_log(self, it, losses):
-        """print training log"""
-        total = losses['loss'].get("total", None)
-        if total is None:
-            raise KeyError("loss dict must contain key 'total'")
-
-        log_str = f"[Iter {it:06d}] Total: {total:.6e}"
-
-        for k in sorted(losses['loss'].keys()):
-            if k == "total":
-                continue
-            log_str += f" | {k.upper()}: {losses['loss'][k]:.6e}"
-
-        # lr = self.optimizer.param_groups[0]["lr"]
-        # log_str += f" | LR: {lr:.3e}"
-
-        print(log_str)
-        
-        

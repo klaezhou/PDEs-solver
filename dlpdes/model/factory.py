@@ -4,6 +4,7 @@ from model.moe_d_w import MOE_dense_weight
 from .moe_d import MOE_dense, moe_penultimate_getter
 from .moe_d_w import moew_penultimate_getter
 from .mlp_2 import MLP_2
+from .bump_mlp import LocalBumpTanhNet
 # from .burgers import BurgersEquation 
 
 def get_model(args):
@@ -14,7 +15,8 @@ def get_model(args):
         "moe_d": MOE_dense,
         "mlp": MLP,
         "moe_d_w": MOE_dense_weight,
-        "mlp_2": MLP_2
+        "mlp_2": MLP_2,
+        "bump": LocalBumpTanhNet,
     }
     target_class = mapping.get(args.model.lower())
     if not target_class:

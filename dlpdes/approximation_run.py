@@ -2,12 +2,12 @@ import torch
 import argparse
 from Equation.factory import get_equation 
 from Pipeline.pipeline import Pipeline
-from viz.callbacks import Callback
-from viz.error_plot_callback import ErrorPlotCallback
-from viz.loss_plot_callback import LossPlotCallback
-from viz.checkpoint_callback import CheckpointCallback
-from viz.rank_callback import RankCallback
-from viz.time_plot_callback import TimePlotCallback
+from cb.callbacks import Callback
+from cb.error_plot_callback import ErrorPlotCallback
+from cb.loss_plot_callback import LossPlotCallback
+from cb.checkpoint_callback import CheckpointCallback
+from cb.rank_callback import RankCallback
+from cb.time_plot_callback import TimePlotCallback
 from model.factory import get_feature_getter
 def parse_args():
     parser = argparse.ArgumentParser(description="PINNs Lightweight Solver")

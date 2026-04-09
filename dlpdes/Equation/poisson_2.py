@@ -191,16 +191,17 @@ class PoissonEquation_2(BaseEquation):
             r_f2.reshape(-1),
             r_b.reshape(-1)
         ], dim=0)
-        r1=r_f1
-        r2= torch.cat([
-            r_f2.reshape(-1),
-            r_b.reshape(-1)
-        ], dim=0)
-        
+        # r1=r_f1 #q
+        # r2= torch.cat([
+        #     r_f2.reshape(-1),
+        #     r_b.reshape(-1)
+        # ], dim=0) # u
+        # r1=r1/math.sqrt(r1.numel())
+        # r2=r2/math.sqrt(r2.numel())
 
         # print("all residual shape:", r.shape)
 
-        r = r / math.sqrt(r.numel())
+        # r = r / math.sqrt(r.numel())
 
         loss_dict = {
             "loss": {

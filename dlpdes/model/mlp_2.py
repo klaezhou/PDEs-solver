@@ -20,10 +20,10 @@ class MLP_2(nn.Module):
     """
     def __init__(self, args):
         super().__init__()
-        self.depth = getattr(args, "mlp_depth", 1)
+        self.depth = getattr(args, "mlp_depth", 3)
         input_size = getattr(args, "input_size", 2)
         hidden_size = getattr(args, "mlp_hidden_size", 80)
-        hidden_size2=getattr(args,"hidden_size2",200)
+        hidden_size2=getattr(args,"hidden_size2",50)
         output_size = getattr(args, "output_size", 1)
         output_size2=getattr(args,"output_size2",2)
         
