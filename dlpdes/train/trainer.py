@@ -6,6 +6,7 @@ from torch.nn.utils import parameters_to_vector, vector_to_parameters
 from train.proj import proj_step , Projection
 from cb.rank_callback import RankCallback
 from .LM import levenberg_marquardt
+from .SLM_bump import Slevenberg_marquardt
 from .utils import *
 class Trainer:
     """
@@ -27,15 +28,15 @@ class Trainer:
         self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
             self.optimizer,
             mode="min",
-            factor=0.5,
-            patience=20,
-            threshold=1e-4,
-            min_lr=1e-6
+            factor=0.8,
+            patience=50,
+            threshold=1e-6,
+            min_lr=1e-4
         )
         
         self.epochs = getattr(self.args, "adam_iters", 10000)
-        self.lbfgs_iter = getattr(self.args, "lbfgs_iter", 500)
-        self.lbfgs_max_iter = getattr(self.args, "lbfgs_max_iter", 50)
+        self.lbfgs_iter = getattr(self.args, "lbfgs_iters", 500)
+        self.lbfgs_max_iter = getattr(self.args, "lbfgs_max_iter", 100)
         self.lbfgs_lr = getattr(self.args, "lbfgs_lr", 1.0)
         
         # args for projection
@@ -117,6 +118,7 @@ class Trainer:
             it += 1
             if it % self.log_freq == 0:
                 self._print_log(it, losses)
+                print("lr:", self.optimizer.param_groups[0]["lr"])
             # (2) iter end
             for cb in self.callbacks:
                 cb.on_iter_end(self, it, losses)
@@ -142,8 +144,9 @@ class Trainer:
             self.model.parameters(),
             lr=self.lbfgs_lr,
             max_iter=self.lbfgs_max_iter,
-            history_size=50,      # 先大幅减小，甚至 5
-            line_search_fn="strong_wolfe" # 必须开启强沃尔夫线搜索
+            history_size=30,     
+            line_search_fn="strong_wolfe", # 必须开启强沃尔夫线搜索。
+            tolerance_grad=1e-11,
         )
 
         it_base = self.iter_base
@@ -189,6 +192,12 @@ class Trainer:
         data=self.data
         return levenberg_marquardt(self, data)
     
+    def train_slm_bump(self, data,model_old):
+        self.model.train()
+        if self.data is None:
+            self.data =data
+        data=self.data
+        return Slevenberg_marquardt(self, data,model_old)
     
 
     def _print_log(self, it, losses):

@@ -43,7 +43,7 @@ def Jacobian_function(x, eq, model, index=None):
         )
         return r, aux
 
-    J_dict, (total_loss, loss_dict) = jacfwd(
+    J_dict, (total_loss, loss_dict) = jacrev(
         residual_func,
         argnums=0,
         has_aux=True,
@@ -83,12 +83,12 @@ def levenberg_marquardt(trainer,data):
     
     # N_params = parameters_to_vector(trainer.model.parameters()).numel() # N = number of parameters
     N_params = parameters_to_vector([p for p in trainer.model.parameters() if p.requires_grad]).numel()
-    lm_gama=getattr(trainer.args, 'lm_gama', 2.0) # factor for adjusting miu ; gama>1
+    lm_gama=getattr(trainer.args, 'lm_gama', 4.0) # factor for adjusting miu ; gama>1
     lm_yita1=getattr(trainer.args, 'lm_yita1', 1e-16) # threshold for decreasing miu
     lm_yita2=getattr(trainer.args, 'lm_yita2', 1e-16) # threshold for increasing miu
     lm_min_miu=getattr(trainer.args, 'lm_min_miu', 1e-32) # min miu
     lm_max_miu=getattr(trainer.args, 'lm_max_miu', 1e100) # max miu to prevent overflow
-    train_tol= getattr(trainer.args, 'lm_train_tol', 1e-5) # training stopping criterion based on gradient norm
+    train_tol= getattr(trainer.args, 'lm_train_tol', 1e-7) # training stopping criterion based on gradient norm
     lm_beta= N_params
     lm_index = np.random.choice(N_params, lm_beta, replace=False)  # random subset of parameters
     it=trainer.iter_base
@@ -106,7 +106,8 @@ def levenberg_marquardt(trainer,data):
         with torch.no_grad():
             JTr_F = torch.matmul(J_F.T, r)  # (subset Jacobian^T) @ (residual) -> [k, 1]
             JTJ_F = torch.matmul(J_F.T, J_F)  # (subset Jacobian^T) @ (subset Jacobian) -> [k, k]
-            A = JTJ_F + lm_miu * torch.eye(JTJ_F.shape[0], device=JTJ_F.device, dtype=JTJ_F.dtype) 
+            #torch.diag_embed(JTJ_F.diagonal()) torch.eye(JTJ_F.shape[0], device=JTJ_F.device, dtype=JTJ_F.dtype) 
+            A = JTJ_F + lm_miu *torch.eye(JTJ_F.shape[0], device=JTJ_F.device, dtype=JTJ_F.dtype) 
             # print("condition number:", torch.linalg.cond(A))
             delta = torch.linalg.solve(A, -JTr_F)  # theta delta (subset) h= (J^T J + miu I)^{-1} @ (-J^T r) -> [k, 1]
             
@@ -132,7 +133,9 @@ def levenberg_marquardt(trainer,data):
         lm_rho=(rho_numer/rho_denom).item()
         gk_norm_F=torch.norm(JTr_F, p=2)
         
-        
+        if gk_norm_F**2<train_tol:
+            print("converged")
+            break
         #update strategy----------------------
         if lm_rho>=lm_yita1 and gk_norm_F**2>=lm_yita2/lm_miu:
             # print("success") #test

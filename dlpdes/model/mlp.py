@@ -18,8 +18,8 @@ class MLP(nn.Module):
     def __init__(self, args):
         super().__init__()
         self.depth = getattr(args, "mlp_depth", 5)
-        input_size = getattr(args, "input_size", 2)
-        hidden_size = getattr(args, "mlp_hidden_size", 100)
+        input_size = getattr(args, "input_dim", 2)
+        hidden_size = getattr(args, "mlp_hidden_size", 80)
         output_size = getattr(args, "output_size", 1)
 
         self.activation = nn.Tanh()

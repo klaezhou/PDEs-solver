@@ -24,14 +24,16 @@ class DCEIEquation(BaseEquation):
 
         # parameters
         A = 0.0
-        k = 1
+        k = 20
         K = k * math.pi
 
-        cx, cy = 0.6, 0.4
-        R = 0.30
+        cx, cy = 0.0, 0.0
+        R = 0.20
+        
+        p1,p2=15,15
 
         # base term: -Δ[sin(pi x1) sin(pi x2)]
-        f0 = 50 * math.pi**2 * torch.sin(5*math.pi * x1) * torch.sin(5*math.pi * x2)
+        f0 = ( p1**2+p2**2)*math.pi**2 * torch.sin(p1*math.pi * x1) * torch.sin(p2*math.pi * x2)
 
         # localized bump
         q = ((x1 - cx) / R) ** 2 + ((x2 - cy) / R) ** 2
@@ -89,12 +91,12 @@ class DCEIEquation(BaseEquation):
     def exact_solution(self, x):
         x1 = x[:, 0:1]
         x2 = x[:, 1:2]
-
-        u0 = torch.sin(5*torch.pi * x1) * torch.sin(5*torch.pi * x2)
+        p1,p2=15,15
+        u0 = torch.sin(p1*torch.pi * x1) * torch.sin(p2*torch.pi * x2)
 
         A = 0.0
-        k = 1
-        phi = self.bump(x, center=(0.6, 0.4))
+        k = 20
+        phi = self.bump(x, center=(0.0, 0.0),radius=0.20)
 
         u_local = A * phi * torch.sin(k * torch.pi * x1) * torch.sin(k * torch.pi * x2)
 
@@ -109,6 +111,14 @@ class DCEIEquation(BaseEquation):
         # example: u=0 at boundary
         return torch.zeros((x.shape[0], 1), device=x.device, dtype=x.dtype)
 
+    def hard_constraint_func(self, x):
+        x1 = x[:, 0:1]
+        x2 = x[:, 1:2]
+        # hf = (1 - x1**2) * (1 - x2**2)
+        hf=torch.ones((x.shape[0], 1), device=x.device, dtype=x.dtype)
+        return hf
+        
+        
     
     def laplacian_jacrev(self, model_fn, x):
         """
@@ -119,6 +129,7 @@ class DCEIEquation(BaseEquation):
         def scalar_u(x_single):
             # x_single: [dim]
             y = model_fn(x_single.unsqueeze(0))   # [1,dim] -> [1,1]
+            y= y*self.hard_constraint_func(x_single.unsqueeze(0)) # hard constraint
             return y.squeeze()                    # scalar
 
         def lap_single(x_single):
@@ -138,6 +149,8 @@ class DCEIEquation(BaseEquation):
         
         x = x.requires_grad_(True)
         u = model(x)   # [N,1]
+        u= u * self.hard_constraint_func(x) # hard constraint
+        
 
         grads = torch.autograd.grad(
             outputs=u,
@@ -160,6 +173,9 @@ class DCEIEquation(BaseEquation):
         return lap
 
     def compute_loss(self, model, batch: dict,mode="jacrev"):
+        # 3) Total and Weighting
+        w_pde = getattr(self.args, "w_pde", 1.0)
+        w_bc  = getattr(self.args, "w_bc", 1.0)
         
         # 1) PDE residual
         x_f = batch["X_f"]
@@ -171,23 +187,22 @@ class DCEIEquation(BaseEquation):
             # print("jacrev")
             # lap_u=self.gradient_jacrev(model, x_f) #ritz
             lap_u = self.laplacian_jacrev(model, x_f)
+            
         f_f = batch.get("f_f", self.f(x_f))
 
         r_f = (lap_u + f_f)
-        loss_pde = 0.5*torch.mean(r_f**2)
+        loss_pde =  w_pde *0.5*torch.mean(r_f**2)
 
         # 2) Boundary loss
         x_b = batch["X_b"]
         u_b = model(x_b)
+        u_b=u_b*self.hard_constraint_func(x_b)
         g_b = batch.get("g_b", self.g(x_b))
         r_b= u_b-g_b
-        loss_bc = 0.5*torch.mean((r_b)**2)
+        loss_bc = 0.5*torch.mean((r_b)**2)*w_bc
 
-        # 3) Total and Weighting
-        w_pde = getattr(self.args, "w_pde", 1.0)
-        w_bc  = getattr(self.args, "w_bc", 1.0)
-        
-        total_loss = w_pde * loss_pde + w_bc * loss_bc
+  
+        total_loss = loss_pde +loss_bc
         r=torch.cat([r_f.flatten(), r_b.flatten()])
         r=r/ math.sqrt(r.numel())
         if mode=="backward":
@@ -276,6 +291,7 @@ class DCEIEquation(BaseEquation):
         model_was_training = model.training
         model.eval()
         pred = model(grid_xy)
+        pred= pred * self.hard_constraint_func(grid_xy) # hard constraint
         if pred.dim() == 1:
             pred = pred.unsqueeze(1)
 
@@ -404,6 +420,7 @@ class DCEIEquation(BaseEquation):
         model.eval()
 
         pred = model(grid_xy)
+        pred = pred * self.hard_constraint_func(grid_xy)
         if pred.dim() == 1:
             pred = pred.unsqueeze(1)
 

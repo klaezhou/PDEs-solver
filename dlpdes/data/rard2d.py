@@ -26,12 +26,12 @@ class RARDResampler2D:
         lowy=-1.0,
         highy=1.0,
         candidate_size=10000,   # |S0|
-        add_size=1000,          # m
+        add_size=5000,          # m
         k=1.0,
         c=1.0,
         eps_floor=1e-12,
         deduplicate=False,
-        max_points=5000,        # optional hard cap for total interior points
+        max_points=15000,        # optional hard cap for total interior points
         drop_mode="low_residual" # "low_residual" "random"
     ):
         self.eq = eq
@@ -82,7 +82,7 @@ class RARDResampler2D:
         r_f = r_all[:n_f]
         return r_f
 
-    @torch.no_grad()
+
     def _candidate_residual_abs(self, model, batch, X_cand):
         """
         Evaluate |r_f| on candidate interior points.
@@ -92,7 +92,7 @@ class RARDResampler2D:
 
         was_training = model.training
         model.eval()
-        loss_dict = self.eq.compute_loss(model, temp_batch, mode="jacrev")
+        loss_dict = self.eq.compute_loss(model, temp_batch, mode="backward")
         if was_training:
             model.train()
 
